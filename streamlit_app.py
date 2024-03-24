@@ -1,12 +1,14 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score
-import altair as alt
-import time
-import zipfile
+from surprise import accuracy
+# Class to parse a file containing ratings, data should be in structure - user; item; rating
+from surprise.reader import Reader
+# Class for loading datasets
+from surprise.dataset import Dataset
+# For splitting the rating data in train and test datasets
+from surprise.model_selection import train_test_split
+# For implementing similarity-based recommendation system
+from surprise.prediction_algorithms.knns import KNNBasic
 
 # Page title
 st.set_page_config(page_title='Tool Recommendation Engine Building', page_icon='🤖')
@@ -28,15 +30,35 @@ with st.sidebar:
     st.markdown('**1.1 Use Case: Targeted Tool Recommendations for Less Active, Established Free Users**')
     example_data = st.toggle('Load example 1 data')
     if example_data:
-        df = pd.read_csv('/workspaces/tool-recommendation-engine-building/model_data_high_retention.csv')
+        df = pd.read_csv('https://github.com/saras23benlab/tool-recommendation-engine-building/blob/master/model_data.csv')
+        df = df.drop(['Unnamed: 0'], axis = 1)
+        df = df[(df['license'] == 'free') & (df['recur_type']=='free') & (df['MKT_persona_category']=='Established Creator')]
+        df = df[['user_id','tool','tool_usage']]
+        df_prediction = df
+
     st.markdown('**1.2 Use CaseTargeted Paid Tool Recommendations for High Active, Established Free Users**')
     example_data = st.toggle('Load example 2 data')
     if example_data:
-        df = pd.read_csv('https://raw.githubusercontent.com/dataprofessor/data/master/delaney_solubility_with_descriptors.csv')
-
+        df = pd.read_csv('https://github.com/saras23benlab/tool-recommendation-engine-building/blob/master/model_data.csv')
+        df = df.drop(['Unnamed: 0'], axis = 1)
+        df_sample1 = df[(df['license'] == 'free') & (df['recur_type']=='free') & (df['MKT_persona_category']=='Established Creator')]
+        df_sample1 = df_sample1[['user_id','tool','tool_usage']]
+        hr = pd.read_csv('https://github.com/saras23benlab/tool-recommendation-engine-building/blob/master/model_data_high_retention.csv')
+        hr = hr[['user_id','license','recur_type']]
+        hr = hr.drop_duplicates()
+        hr_free = hr[hr['license'] == 'free']
+        high_retention_free_user_list = hr_free['user_id'].tolist()
+        df_sample2_paid = df[(df['license'].isin(['pro', 'legend', 'star'])) & (df['recur_type'].isin(['all_time_paid', 'free -> paid'])) & (df['MKT_persona_category'] == 'Established Creator')]
+        df_sample2_paid = df_sample2_paid[['user_id','tool','tool_usage']]
+        temp = df_sample1[['user_id','tool','tool_usage']]
+        df_sample2_hr_free = temp[temp['user_id'].isin(high_retention_free_user_list)]
+        sample_free_user_list = df_sample2_hr_free['user_id'].tolist()
+        df_sample2 =pd.concat([df_sample2_paid,df_sample2_hr_free], axis=0)
+        df = df_sample2
+        df_prediction = df_sample2_hr_free
 
     st.header('2. Set Parameters')
-    parameter_split_size = st.slider('Data split ratio (% for Training Set)', 10, 90, 80, 5)
+    parameter_split_size = st.slider('Data split ratio (% for Testing Set)', 10, 90, 80, 5)
 
     st.header('3. Recommendation Engine Setting')
     selected_tool = st.selectbox("Which tools do you want to predict?",
@@ -46,165 +68,128 @@ with st.sidebar:
     st.write('You selected:', selected_tool)
     
     user_predict = st.slider('How many users do you want to predict?', 0, 100, 10, 5)
-    
+        
 # Initiate the model building process
 if example_data: 
     with st.status("Running ...", expanded=True) as status:
     
         st.write("Loading data ...")
-        X = df.iloc[:,:-1]
-        y = df.iloc[:,-1]
-            
-        st.write("Splitting data ...")
-        time.sleep(sleep_time)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=(100-parameter_split_size)/100, random_state=parameter_random_state)
-    
-        st.write("Model training ...")
-        time.sleep(sleep_time)
+        # Instantiating Reader scale with expected rating scale
+        reader = Reader(rating_scale = (1, 2))
 
-        if parameter_max_features == 'all':
-            parameter_max_features = None
-            parameter_max_features_metric = X.shape[1]
-        
-        rf = RandomForestRegressor(
-                n_estimators=parameter_n_estimators,
-                max_features=parameter_max_features,
-                min_samples_split=parameter_min_samples_split,
-                min_samples_leaf=parameter_min_samples_leaf,
-                random_state=parameter_random_state,
-                criterion=parameter_criterion,
-                bootstrap=parameter_bootstrap,
-                oob_score=parameter_oob_score)
-        rf.fit(X_train, y_train)
-        
-        st.write("Applying model to make predictions ...")
-        time.sleep(sleep_time)
-        y_train_pred = rf.predict(X_train)
-        y_test_pred = rf.predict(X_test)
-            
+        # Define 5 quantiles for bin edges, which will split the data into 5 equal parts
+        quantiles = df['tool_usage'].quantile([0, 0.3,0.6, 1])
+        print(quantiles)
+        # Define bin labels
+        bin_labels = [1,2,3]
+        # Create a new column 'usage_category_5_groups' with the binned data
+        df['rate'] = pd.cut(df['tool_usage'], bins=quantiles, labels=bin_labels, include_lowest=True)
+        # Loading the rating dataset
+        data = Dataset.load_from_df(df[['user_id', 'tool', 'rate']], reader)
+        # Splitting the data into train and test datasets
+        trainset, testset = train_test_split(data, test_size = 0.01 * parameter_split_size, random_state = 42)
+        st.write("Model training ...")
+
+        def precision_recall_at_k(model, k = 10, threshold = 1.5):
+            """Return precision and recall at k metrics for each user"""
+
+            # First map the predictions to each user
+            user_est_true = defaultdict(list)
+
+            # Making predictions on the test data
+            predictions = model.test(testset)
+
+            for uid, _, true_r, est, _ in predictions:
+                user_est_true[uid].append((est, true_r))
+
+            precisions = dict()
+            recalls = dict()
+            for uid, user_ratings in user_est_true.items():
+
+                # Sort user ratings by estimated value
+                user_ratings.sort(key = lambda x: x[0], reverse = True)
+
+                # Number of relevant items
+                n_rel = sum((true_r >= threshold) for (_, true_r) in user_ratings)
+
+                # Number of recommended items in top k
+                n_rec_k = sum((est >= threshold) for (est, _) in user_ratings[:k])
+
+                # Number of relevant and recommended items in top k
+                n_rel_and_rec_k = sum(((true_r >= threshold) and (est >= threshold))
+                                    for (est, true_r) in user_ratings[:k])
+
+                # Precision@K: Proportion of recommended items that are relevant
+                # When n_rec_k is 0, Precision is undefined. Therefore, we are setting Precision to 0 when n_rec_k is 0
+
+                precisions[uid] = n_rel_and_rec_k / n_rec_k if n_rec_k != 0 else 0
+
+                # Recall@K: Proportion of relevant items that are recommended
+                # When n_rel is 0, Recall is undefined. Therefore, we are setting Recall to 0 when n_rel is 0
+
+                recalls[uid] = n_rel_and_rec_k / n_rel if n_rel != 0 else 0
+
+            # Mean of all the predicted precisions are calculated
+            precision = round((sum(prec for prec in precisions.values()) / len(precisions)), 3)
+
+            # Mean of all the predicted recalls are calculated
+            recall = round((sum(rec for rec in recalls.values()) / len(recalls)), 3)
+
+            accuracy.rmse(predictions)
+
+            print('Precision: ', precision) # Command to print the overall precision
+
+            print('Recall: ', recall) # Command to print the overall recall
+
+            print('F_1 score: ', round((2*precision*recall)/(precision+recall), 3)) # Formula to compute the F-1 score
+
+        # Declaring the similarity options
+        sim_options = {'name': 'cosine',
+               'user_based': True
+               }
+
+        # KNN algorithm is used to find desired similar items
+        sim_user_user = KNNBasic(sim_options = sim_options, verbose = False, random_state = 1)
+
+        # Train the algorithm on the train set, and predict ratings for the test set
+        sim_user_user.fit(trainset)
         st.write("Evaluating performance metrics ...")
-        time.sleep(sleep_time)
-        train_mse = mean_squared_error(y_train, y_train_pred)
-        train_r2 = r2_score(y_train, y_train_pred)
-        test_mse = mean_squared_error(y_test, y_test_pred)
-        test_r2 = r2_score(y_test, y_test_pred)
-        
-        st.write("Displaying performance metrics ...")
-        time.sleep(sleep_time)
-        parameter_criterion_string = ' '.join([x.capitalize() for x in parameter_criterion.split('_')])
-        #if 'Mse' in parameter_criterion_string:
-        #    parameter_criterion_string = parameter_criterion_string.replace('Mse', 'MSE')
-        rf_results = pd.DataFrame(['Random forest', train_mse, train_r2, test_mse, test_r2]).transpose()
-        rf_results.columns = ['Method', f'Training {parameter_criterion_string}', 'Training R2', f'Test {parameter_criterion_string}', 'Test R2']
-        # Convert objects to numerics
-        for col in rf_results.columns:
-            rf_results[col] = pd.to_numeric(rf_results[col], errors='ignore')
-        # Round to 3 digits
-        rf_results = rf_results.round(3)
+        # Let us compute precision@k, recall@k, and F_1 score with k = 10
+        precision_recall_at_k(sim_user_user)
+        st.write("Tool Recommendation prediction ...")
+        def n_users_not_interacted_with(n, data, tool):
+            users_interacted_with_product = set(data[data['tool'] == tool]['user_id'])
+            all_users = set(data['user_id'])
+            return list(all_users.difference(users_interacted_with_product))[:n] # where n is the number of elements to get in the list
+
+        #select 50 users that never using quick-edit-toolbar
+        sample_users_q = n_users_not_interacted_with(user_predict, df_prediction, selected_tool)
+        # Predict ratings for each user for the specific item
+        predictions = [sim_user_user.predict(user_id, selected_tool, r_ui=5, verbose=True) for user_id in sample_users_q]
+
+        # Create a DataFrame from the predictions
+        predicted_ratings = pd.DataFrame({
+            'user_id': [prediction.uid for prediction in predictions],
+            'item': item,
+            'predicted_rating': [prediction.est for prediction in predictions],
+            'actual_k': [prediction.details.get('actual_k') for prediction in predictions],
+            'was_impossible': [prediction.details.get('was_impossible') for prediction in predictions]
+        })
+
+        predicted_ratings = predicted_ratings[predicted_ratings['was_impossible'] == False]
+        predicted_ratings = predicted_ratings.reset_index()
         
     status.update(label="Status", state="complete", expanded=False)
 
-    # Display data info
-    st.header('Input data', divider='rainbow')
-    col = st.columns(4)
-    col[0].metric(label="No. of samples", value=X.shape[0], delta="")
-    col[1].metric(label="No. of X variables", value=X.shape[1], delta="")
-    col[2].metric(label="No. of Training samples", value=X_train.shape[0], delta="")
-    col[3].metric(label="No. of Test samples", value=X_test.shape[0], delta="")
-    
-    with st.expander('Initial dataset', expanded=True):
-        st.dataframe(df, height=210, use_container_width=True)
-    with st.expander('Train split', expanded=False):
-        train_col = st.columns((3,1))
-        with train_col[0]:
-            st.markdown('**X**')
-            st.dataframe(X_train, height=210, hide_index=True, use_container_width=True)
-        with train_col[1]:
-            st.markdown('**y**')
-            st.dataframe(y_train, height=210, hide_index=True, use_container_width=True)
-    with st.expander('Test split', expanded=False):
-        test_col = st.columns((3,1))
-        with test_col[0]:
-            st.markdown('**X**')
-            st.dataframe(X_test, height=210, hide_index=True, use_container_width=True)
-        with test_col[1]:
-            st.markdown('**y**')
-            st.dataframe(y_test, height=210, hide_index=True, use_container_width=True)
-
-    # Zip dataset files
-    df.to_csv('dataset.csv', index=False)
-    X_train.to_csv('X_train.csv', index=False)
-    y_train.to_csv('y_train.csv', index=False)
-    X_test.to_csv('X_test.csv', index=False)
-    y_test.to_csv('y_test.csv', index=False)
-    
-    list_files = ['dataset.csv', 'X_train.csv', 'y_train.csv', 'X_test.csv', 'y_test.csv']
-    with zipfile.ZipFile('dataset.zip', 'w') as zipF:
-        for file in list_files:
-            zipF.write(file, compress_type=zipfile.ZIP_DEFLATED)
-
-    with open('dataset.zip', 'rb') as datazip:
-        btn = st.download_button(
-                label='Download ZIP',
-                data=datazip,
-                file_name="dataset.zip",
-                mime="application/octet-stream"
-                )
-    
-    # Display model parameters
-    st.header('Model parameters', divider='rainbow')
-    parameters_col = st.columns(3)
-    parameters_col[0].metric(label="Data split ratio (% for Training Set)", value=parameter_split_size, delta="")
-    parameters_col[1].metric(label="Number of estimators (n_estimators)", value=parameter_n_estimators, delta="")
-    parameters_col[2].metric(label="Max features (max_features)", value=parameter_max_features_metric, delta="")
-    
-    # Display feature importance plot
-    importances = rf.feature_importances_
-    feature_names = list(X.columns)
-    forest_importances = pd.Series(importances, index=feature_names)
-    df_importance = forest_importances.reset_index().rename(columns={'index': 'feature', 0: 'value'})
-    
-    bars = alt.Chart(df_importance).mark_bar(size=40).encode(
-             x='value:Q',
-             y=alt.Y('feature:N', sort='-x')
-           ).properties(height=250)
-
-    performance_col = st.columns((2, 0.2, 3))
-    with performance_col[0]:
-        st.header('Model performance', divider='rainbow')
-        st.dataframe(rf_results.T.reset_index().rename(columns={'index': 'Parameter', 0: 'Value'}))
-    with performance_col[2]:
-        st.header('Feature importance', divider='rainbow')
-        st.altair_chart(bars, theme='streamlit', use_container_width=True)
 
     # Prediction results
     st.header('Prediction results', divider='rainbow')
-    s_y_train = pd.Series(y_train, name='actual').reset_index(drop=True)
-    s_y_train_pred = pd.Series(y_train_pred, name='predicted').reset_index(drop=True)
-    df_train = pd.DataFrame(data=[s_y_train, s_y_train_pred], index=None).T
-    df_train['class'] = 'train'
-        
-    s_y_test = pd.Series(y_test, name='actual').reset_index(drop=True)
-    s_y_test_pred = pd.Series(y_test_pred, name='predicted').reset_index(drop=True)
-    df_test = pd.DataFrame(data=[s_y_test, s_y_test_pred], index=None).T
-    df_test['class'] = 'test'
-    
-    df_prediction = pd.concat([df_train, df_test], axis=0)
-    
-    prediction_col = st.columns((2, 0.2, 3))
+    prediction_col = st.columns(5)
     
     # Display dataframe
     with prediction_col[0]:
-        st.dataframe(df_prediction, height=320, use_container_width=True)
-
-    # Display scatter plot of actual vs predicted values
-    with prediction_col[2]:
-        scatter = alt.Chart(df_prediction).mark_circle(size=60).encode(
-                        x='actual',
-                        y='predicted',
-                        color='class'
-                  )
-        st.altair_chart(scatter, theme='streamlit', use_container_width=True)
+        st.dataframe(predicted_ratings, height=320, use_container_width=True)
+    
 
     
 # Ask for CSV upload if none is detected
