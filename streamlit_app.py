@@ -49,7 +49,7 @@ with st.sidebar:
     user_predict = st.slider('How many users do you want to predict?', 0, 100, 10, 5)
     
 # Initiate the model building process
-if uploaded_file or example_data: 
+if example_data: 
     with st.status("Running ...", expanded=True) as status:
     
         st.write("Loading data ...")
@@ -214,4 +214,4 @@ if uploaded_file or example_data:
     
 # Ask for CSV upload if none is detected
 else:
-    st.warning('👈 Upload a CSV file or click *"Load example data"* to get started!')
+
