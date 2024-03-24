@@ -9,77 +9,45 @@ import time
 import zipfile
 
 # Page title
-st.set_page_config(page_title='ML Model Building', page_icon='🤖')
-st.title('🤖 ML Model Building')
+st.set_page_config(page_title='Tool Recommendation Engine Building', page_icon='🤖')
+st.title('🤖 Tool Recommendation Engine Building')
+st.info("In our journey to improve the Tubebuddy activation rate, we've realized how crucial smart tools like the Recommendation Engine are. At Tubebuddy, this isn’t just a feature; it’s our mission to connect creators with their ideal audience. This engine isn't just about improving user retention; it’s about creating a space where every recommendation feels like it's made just for you. We aim to use this engine to turn every interaction into an opportunity for creators to shine and audiences to find their next favorite content.")
 
 with st.expander('About this app'):
-  st.markdown('**What can this app do?**')
-  st.info('This app allow users to build a machine learning (ML) model in an end-to-end workflow. Particularly, this encompasses data upload, data pre-processing, ML model building and post-model analysis.')
+  st.markdown('**Why Tool Recommendation Engine**')
+  st.info("The data reveals that there isn't a single set of tools that guarantees high user retention. Relying on a singular recommendation approach risks losing users who could potentially have high long-term engagement. while there is a consistent set of tool combinations used weekly by some users, a significant portion of users change their tool usage weekly to maintain retention. This pattern indicates that basing recommendations solely on the top 10 or 20 tools each week could overlook many valuable opportunities. We need a recommendation engine that can dynamically adapt to these varied user behaviors and preferences to ensure we capture the full spectrum of engagement opportunities.")
 
   st.markdown('**How to use the app?**')
   st.warning('To engage with the app, go to the sidebar and 1. Select a data set and 2. Adjust the model parameters by adjusting the various slider widgets. As a result, this would initiate the ML model building process, display the model results as well as allowing users to download the generated models and accompanying data.')
 
-  st.markdown('**Under the hood**')
-  st.markdown('Data sets:')
-  st.code('''- Drug solubility data set
-  ''', language='markdown')
-  
-  st.markdown('Libraries used:')
-  st.code('''- Pandas for data wrangling
-- Scikit-learn for building a machine learning model
-- Altair for chart creation
-- Streamlit for user interface
-  ''', language='markdown')
-
 
 # Sidebar for accepting input parameters
 with st.sidebar:
-    # Load data
-    st.header('1.1. Input data')
-
-    st.markdown('**1. Use custom data**')
-    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
-    if uploaded_file is not None:
-        df = pd.read_csv(uploaded_file, index_col=False)
-      
-    # Download example data
-    @st.cache_data
-    def convert_df(input_df):
-        return input_df.to_csv(index=False).encode('utf-8')
-    example_csv = pd.read_csv('https://raw.githubusercontent.com/dataprofessor/data/master/delaney_solubility_with_descriptors.csv')
-    csv = convert_df(example_csv)
-    st.download_button(
-        label="Download example CSV",
-        data=csv,
-        file_name='delaney_solubility_with_descriptors.csv',
-        mime='text/csv',
-    )
-
+    st.header('1. Choose Use case')
     # Select example data
-    st.markdown('**1.2. Use example data**')
-    example_data = st.toggle('Load example data')
+    st.markdown('**1.1 Use Case: Targeted Tool Recommendations for Less Active, Established Free Users**')
+    example_data = st.toggle('Load example 1 data')
     if example_data:
         df = pd.read_csv('https://raw.githubusercontent.com/dataprofessor/data/master/delaney_solubility_with_descriptors.csv')
+
+    st.markdown('**1.2 Use CaseTargeted Paid Tool Recommendations for High Active, Established Free Users**')
+    example_data = st.toggle('Load example 2 data')
+    if example_data:
+        df = pd.read_csv('https://raw.githubusercontent.com/dataprofessor/data/master/delaney_solubility_with_descriptors.csv')
+
 
     st.header('2. Set Parameters')
     parameter_split_size = st.slider('Data split ratio (% for Training Set)', 10, 90, 80, 5)
 
-    st.subheader('2.1. Learning Parameters')
-    with st.expander('See parameters'):
-        parameter_n_estimators = st.slider('Number of estimators (n_estimators)', 0, 1000, 100, 100)
-        parameter_max_features = st.select_slider('Max features (max_features)', options=['all', 'sqrt', 'log2'])
-        parameter_min_samples_split = st.slider('Minimum number of samples required to split an internal node (min_samples_split)', 2, 10, 2, 1)
-        parameter_min_samples_leaf = st.slider('Minimum number of samples required to be at a leaf node (min_samples_leaf)', 1, 10, 2, 1)
-
-    st.subheader('2.2. General Parameters')
-    with st.expander('See parameters', expanded=False):
-        parameter_random_state = st.slider('Seed number (random_state)', 0, 1000, 42, 1)
-        parameter_criterion = st.select_slider('Performance measure (criterion)', options=['squared_error', 'absolute_error', 'friedman_mse'])
-        parameter_bootstrap = st.select_slider('Bootstrap samples when building trees (bootstrap)', options=[True, False])
-        parameter_oob_score = st.select_slider('Whether to use out-of-bag samples to estimate the R^2 on unseen data (oob_score)', options=[False, True])
-
-    sleep_time = st.slider('Sleep time', 0, 3, 0)
-
+    st.header('3. Recommendation Engine Setting')
+    selected_tool = st.selectbox("Which tools do you want to predict?",
+    ("Quick-Edit Toolbar", "Title Generator"),
+    index=None,
+    placeholder="Select tool")
+    st.write('You selected:', selected_tool)
+    
+    user_predict = st.slider('How many users do you want to predict?', 0, 100, 10, 5)
+    
 # Initiate the model building process
 if uploaded_file or example_data: 
     with st.status("Running ...", expanded=True) as status:
