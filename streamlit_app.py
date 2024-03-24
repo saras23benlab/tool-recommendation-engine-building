@@ -28,8 +28,7 @@ with st.sidebar:
     st.markdown('**1.1 Use Case: Targeted Tool Recommendations for Less Active, Established Free Users**')
     example_data = st.toggle('Load example 1 data')
     if example_data:
-        df = pd.read_csv('https://raw.githubusercontent.com/dataprofessor/data/master/delaney_solubility_with_descriptors.csv')
-
+        df = pd.read_csv('/workspaces/tool-recommendation-engine-building/model_data_high_retention.csv')
     st.markdown('**1.2 Use CaseTargeted Paid Tool Recommendations for High Active, Established Free Users**')
     example_data = st.toggle('Load example 2 data')
     if example_data:
@@ -53,10 +52,6 @@ if example_data:
     with st.status("Running ...", expanded=True) as status:
     
         st.write("Loading data ...")
-        time.sleep(sleep_time)
-
-        st.write("Preparing data ...")
-        time.sleep(sleep_time)
         X = df.iloc[:,:-1]
         y = df.iloc[:,-1]
             
@@ -214,4 +209,4 @@ if example_data:
     
 # Ask for CSV upload if none is detected
 else:
-
+    st.info('Load example use case to get started!')
