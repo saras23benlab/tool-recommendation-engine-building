@@ -145,19 +145,22 @@ if df is not None and df_prediction is not None:
 
                 recalls[uid] = n_rel_and_rec_k / n_rel if n_rel != 0 else 0
 
+            rmse = accuracy.rmse(predictions)
+
             # Mean of all the predicted precisions are calculated
             precision = round((sum(prec for prec in precisions.values()) / len(precisions)), 3)
 
             # Mean of all the predicted recalls are calculated
             recall = round((sum(rec for rec in recalls.values()) / len(recalls)), 3)
 
-            accuracy.rmse(predictions)
+            # Compute F1 score
+            if precision + recall != 0:
+                f1_score = round((2 * precision * recall) / (precision + recall), 3)
+            else:
+                f1_score = 0
 
-            print('Precision: ', precision) # Command to print the overall precision
-
-            print('Recall: ', recall) # Command to print the overall recall
-
-            print('F_1 score: ', round((2*precision*recall)/(precision+recall), 3)) # Formula to compute the F-1 score
+            # Return the precision, recall, and F1 score
+            return rmse, precision, recall, f1_score
 
         # Declaring the similarity options
         sim_options = {'name': 'cosine',
@@ -200,7 +203,15 @@ if df is not None and df_prediction is not None:
         predicted_ratings = predicted_ratings.drop(columns=['index','was_impossible','actual_k'])
     status.update(label="Status", state="complete", expanded=False)
 
-
+    # Model Metric
+    # Let us compute precision@k, recall@k, and F_1 score with k = 10
+    rmse, precision, recall, f1_score = precision_recall_at_k(sim_user_user)
+    st.header('Model Performance')
+    st.write(f'RMSE: {rmse}',)
+    st.write(f'Precision: all the relevant tools {precision* 100:.2f}% are recommended.')  # Display the overall precision
+    st.write(f'Recall: out of all the recommended tools {recall* 100:.2f}% are relevant.')  # Display the overall recall
+    
+    
     # Prediction results
     st.header('Prediction results', divider='rainbow')
     prediction_col = st.columns(4)
