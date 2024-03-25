@@ -226,11 +226,10 @@ if df is not None and df_prediction is not None:
      
     # Prediction results
     st.header('Prediction results', divider='rainbow')
-    prediction_col = st.columns(4)
-    
-    # Display dataframe
-    with prediction_col[0]:
-        st.dataframe(predicted_ratings, height=320, use_container_width=True)
+
+# Use a container to span the full width
+    with st.container():
+        st.dataframe(predicted_ratings, height=320)
     
 
     
