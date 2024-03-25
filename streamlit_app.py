@@ -9,6 +9,9 @@ from surprise.dataset import Dataset
 from surprise.model_selection import train_test_split
 # For implementing similarity-based recommendation system
 from surprise.prediction_algorithms.knns import KNNBasic
+from collections import defaultdict
+import time
+import random
 
 # Page title
 st.set_page_config(page_title='Tool Recommendation Engine Building', page_icon='🤖')
@@ -26,56 +29,66 @@ with st.expander('About this app'):
 # Sidebar for accepting input parameters
 with st.sidebar:
     st.header('1. Choose Use case')
+
     # Select example data
     st.markdown('**1.1 Use Case: Targeted Tool Recommendations for Less Active, Established Free Users**')
-    example_data = st.toggle('Load example 1 data')
-    if example_data:
-        df = pd.read_csv('https://github.com/saras23benlab/tool-recommendation-engine-building/blob/master/model_data.csv')
-        df = df.drop(['Unnamed: 0'], axis = 1)
-        df = df[(df['license'] == 'free') & (df['recur_type']=='free') & (df['MKT_persona_category']=='Established Creator')]
-        df = df[['user_id','tool','tool_usage']]
-        df_prediction = df
+    example_data_1 = st.checkbox('Load example 1 data')
 
-    st.markdown('**1.2 Use CaseTargeted Paid Tool Recommendations for High Active, Established Free Users**')
-    example_data = st.toggle('Load example 2 data')
-    if example_data:
-        df = pd.read_csv('https://github.com/saras23benlab/tool-recommendation-engine-building/blob/master/model_data.csv')
-        df = df.drop(['Unnamed: 0'], axis = 1)
-        df_sample1 = df[(df['license'] == 'free') & (df['recur_type']=='free') & (df['MKT_persona_category']=='Established Creator')]
-        df_sample1 = df_sample1[['user_id','tool','tool_usage']]
-        hr = pd.read_csv('https://github.com/saras23benlab/tool-recommendation-engine-building/blob/master/model_data_high_retention.csv')
-        hr = hr[['user_id','license','recur_type']]
-        hr = hr.drop_duplicates()
-        hr_free = hr[hr['license'] == 'free']
-        high_retention_free_user_list = hr_free['user_id'].tolist()
-        df_sample2_paid = df[(df['license'].isin(['pro', 'legend', 'star'])) & (df['recur_type'].isin(['all_time_paid', 'free -> paid'])) & (df['MKT_persona_category'] == 'Established Creator')]
-        df_sample2_paid = df_sample2_paid[['user_id','tool','tool_usage']]
-        temp = df_sample1[['user_id','tool','tool_usage']]
-        df_sample2_hr_free = temp[temp['user_id'].isin(high_retention_free_user_list)]
-        sample_free_user_list = df_sample2_hr_free['user_id'].tolist()
-        df_sample2 =pd.concat([df_sample2_paid,df_sample2_hr_free], axis=0)
-        df = df_sample2
-        df_prediction = df_sample2_hr_free
+    st.markdown('**1.2 Use Case: Targeted Paid Tool Recommendations for High Active, Established Free Users**')
+    example_data_2 = st.checkbox('Load example 2 data')
 
     st.header('2. Set Parameters')
     parameter_split_size = st.slider('Data split ratio (% for Testing Set)', 10, 90, 80, 5)
 
     st.header('3. Recommendation Engine Setting')
     selected_tool = st.selectbox("Which tools do you want to predict?",
-    ("Quick-Edit Toolbar", "Title Generator"),
-    index=None,
-    placeholder="Select tool")
+                                 ("Quick-Edit Toolbar", "Title Generator","Suggested Tags","Keyword Explorer","Chapter Editor","Thumbnail Generator","Tag Tools InstaSuggest"),
+                                 index=None,
+                                 placeholder="Select tool")
     st.write('You selected:', selected_tool)
     
-    user_predict = st.slider('How many users do you want to predict?', 0, 100, 10, 5)
-        
+    user_predict = st.slider('How many users do you want to predict?', 0, 1000, 10, 5)
+    sleep_time = st.slider('Sleep time', 0, 3, 0) 
 # Initiate the model building process
-if example_data: 
+ # Load data based on checkbox selection
+df = None
+df_prediction = None
+
+if example_data_1:
+    df = pd.read_csv('https://raw.githubusercontent.com/saras23benlab/tool-recommendation-engine-building/master/model_data.csv')
+    df = df.drop(['Unnamed: 0'], axis=1)
+    df = df[(df['license'] == 'free') & (df['recur_type'] == 'free') & (df['MKT_persona_category'] == 'Established Creator')]
+    df = df[['user_id', 'tool', 'tool_usage']]
+    df_prediction = df
+
+if example_data_2:
+    df = pd.read_csv('https://raw.githubusercontent.com/saras23benlab/tool-recommendation-engine-building/master/model_data.csv')
+    df = df.drop(['Unnamed: 0'], axis=1)
+    df_sample1 = df[(df['license'] == 'free') & (df['recur_type'] == 'free') & (df['MKT_persona_category'] == 'Established Creator')]
+    df_sample1 = df_sample1[['user_id', 'tool', 'tool_usage']]
+    hr = pd.read_csv('https://raw.githubusercontent.com/saras23benlab/tool-recommendation-engine-building/master/model_data_high_retention.csv')
+    hr = hr[['user_id', 'license', 'recur_type']]
+    hr = hr.drop_duplicates()
+    hr_free = hr[hr['license'] == 'free']
+    high_retention_free_user_list = hr_free['user_id'].tolist()
+    df_sample2_paid = df[(df['license'].isin(['legend','star','pro'])) & (df['recur_type'].isin(['all_time_paid', 'free -> paid'])) & (df['MKT_persona_category'] == 'Established Creator')]
+    df_sample2_paid = df_sample2_paid[['user_id', 'tool', 'tool_usage']]
+    #paid = list(set(df_sample2_paid['user_id'].tolist()))
+    #random.seed(42)
+    #selected_elements = random.sample(paid, 300)
+    #df_sample2_paid = df_sample2_paid[df_sample2_paid['user_id'].isin(selected_elements)]
+    temp = df_sample1[['user_id', 'tool', 'tool_usage']]
+    df_sample2_hr_free = temp[temp['user_id'].isin(high_retention_free_user_list)]
+    df = pd.concat([df_sample2_paid, df_sample2_hr_free], axis=0)
+    df_prediction = df_sample2_hr_free
+ 
+if df is not None and df_prediction is not None:
     with st.status("Running ...", expanded=True) as status:
     
         st.write("Loading data ...")
+        time.sleep(sleep_time)
         # Instantiating Reader scale with expected rating scale
-        reader = Reader(rating_scale = (1, 2))
+        reader = Reader(rating_scale = (1, 3))
 
         # Define 5 quantiles for bin edges, which will split the data into 5 equal parts
         quantiles = df['tool_usage'].quantile([0, 0.3,0.6, 1])
@@ -89,6 +102,7 @@ if example_data:
         # Splitting the data into train and test datasets
         trainset, testset = train_test_split(data, test_size = 0.01 * parameter_split_size, random_state = 42)
         st.write("Model training ...")
+        time.sleep(sleep_time)
 
         def precision_recall_at_k(model, k = 10, threshold = 1.5):
             """Return precision and recall at k metrics for each user"""
@@ -154,9 +168,11 @@ if example_data:
         # Train the algorithm on the train set, and predict ratings for the test set
         sim_user_user.fit(trainset)
         st.write("Evaluating performance metrics ...")
+        time.sleep(sleep_time)
         # Let us compute precision@k, recall@k, and F_1 score with k = 10
         precision_recall_at_k(sim_user_user)
         st.write("Tool Recommendation prediction ...")
+        time.sleep(sleep_time)
         def n_users_not_interacted_with(n, data, tool):
             users_interacted_with_product = set(data[data['tool'] == tool]['user_id'])
             all_users = set(data['user_id'])
@@ -170,21 +186,22 @@ if example_data:
         # Create a DataFrame from the predictions
         predicted_ratings = pd.DataFrame({
             'user_id': [prediction.uid for prediction in predictions],
-            'item': item,
+            'item': selected_tool,
             'predicted_rating': [prediction.est for prediction in predictions],
             'actual_k': [prediction.details.get('actual_k') for prediction in predictions],
             'was_impossible': [prediction.details.get('was_impossible') for prediction in predictions]
         })
 
         predicted_ratings = predicted_ratings[predicted_ratings['was_impossible'] == False]
+        predicted_ratings = predicted_ratings.sort_values(by='predicted_rating', ascending=False)
         predicted_ratings = predicted_ratings.reset_index()
-        
+        predicted_ratings = predicted_ratings.drop(columns=['index','was_impossible','actual_k'])
     status.update(label="Status", state="complete", expanded=False)
 
 
     # Prediction results
     st.header('Prediction results', divider='rainbow')
-    prediction_col = st.columns(5)
+    prediction_col = st.columns(4)
     
     # Display dataframe
     with prediction_col[0]:
