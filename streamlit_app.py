@@ -22,6 +22,8 @@ with st.expander('About this app'):
   st.markdown('**Why Tool Recommendation Engine**')
   st.info("The data reveals that there isn't a single set of tools that guarantees high user retention. Relying on a singular recommendation approach risks losing users who could potentially have high long-term engagement. while there is a consistent set of tool combinations used weekly by some users, a significant portion of users change their tool usage weekly to maintain retention. This pattern indicates that basing recommendations solely on the top 10 or 20 tools each week could overlook many valuable opportunities. We need a recommendation engine that can dynamically adapt to these varied user behaviors and preferences to ensure we capture the full spectrum of engagement opportunities.")
   st.info("Domo Link: https://bengroup.domo.com/page/196225318 ")
+  st.markdown('**Methodology')
+  st.image('https://raw.githubusercontent.com/saras23benlab/tool-recommendation-engine-building/master/user-user.png', caption='User-User Collaborative filtering')
   st.markdown('**How does it work**')
   st.info("Lucid chart: https://lucid.app/lucidchart/e19682f5-5e27-4af9-8cb6-10a82b86b2c3/edit?viewport_loc=-3704%2C-956%2C4736%2C2564%2C.Q4MUjXso07N&invitationId=inv_0e18c086-b21a-40f4-9732-892507a87971")
   st.markdown('**How to use the app?**')
