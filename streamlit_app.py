@@ -94,7 +94,6 @@ if df is not None and df_prediction is not None:
 
         # Define 5 quantiles for bin edges, which will split the data into 5 equal parts
         quantiles = df['tool_usage'].quantile([0, 0.3,0.6, 1])
-        print(quantiles)
         # Define bin labels
         bin_labels = [1,2,3]
         # Create a new column 'usage_category_5_groups' with the binned data
@@ -203,6 +202,19 @@ if df is not None and df_prediction is not None:
         predicted_ratings = predicted_ratings.drop(columns=['index','was_impossible','actual_k'])
     status.update(label="Status", state="complete", expanded=False)
 
+    # Rating Metric
+    st.header('Rating Interpretation')
+    # Initialize a string to hold the message
+    message = 'Usage of each tool has been divided into 3 ratings based on the 30,60,100 quantiles:\n\n'
+    # Iterate over the quantiles to append the ranges to the message
+    for i in range(len(quantiles) - 1):
+        lower_bound = quantiles.iloc[i]
+        upper_bound = quantiles.iloc[i + 1]
+        message += f'    Rating {i + 1}: {lower_bound} to {upper_bound}\n'
+
+    # Use st.write to display the message in the Streamlit app
+    st.write(message)       
+
     # Model Metric
     # Let us compute precision@k, recall@k, and F_1 score with k = 10
     rmse, precision, recall, f1_score = precision_recall_at_k(sim_user_user)
@@ -211,7 +223,7 @@ if df is not None and df_prediction is not None:
     st.write(f'Precision: all the relevant tools {precision* 100:.2f}% are recommended.')  # Display the overall precision
     st.write(f'Recall: out of all the recommended tools {recall* 100:.2f}% are relevant.')  # Display the overall recall
     
-    
+     
     # Prediction results
     st.header('Prediction results', divider='rainbow')
     prediction_col = st.columns(4)
