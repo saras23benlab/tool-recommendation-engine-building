@@ -9,4 +9,4 @@ In our journey to improve the Tubebuddy activation rate, we've realized how cruc
 
 ## Demo App
 
-[![Streamlit App](https://toolrecommendationenginebuilding-fuvhqcvgc.streamlit.app/](https://toolrecommendationenginebuilding-fuvhqcvgc.streamlit.app/)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://toolrecommendationenginebuilding-fuvhqcvgc.streamlit.app/)
