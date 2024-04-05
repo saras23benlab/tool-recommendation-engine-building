@@ -44,14 +44,6 @@ with st.sidebar:
     st.header('2. Set Parameters')
     parameter_split_size = st.slider('Data split ratio (% for Testing Set)', 10, 90, 80, 5)
 
-    st.header('3. Recommendation Engine Setting')
-    selected_tool = st.selectbox("Which tools do you want to predict?",
-                                 ("Quick-Edit Toolbar", "Title Generator","Suggested Tags","Keyword Explorer","Chapter Editor","Thumbnail Generator","Tag Tools InstaSuggest"),
-                                 index=None,
-                                 placeholder="Select tool")
-    st.write('You selected:', selected_tool)
-    
-    user_predict = st.slider('How many users do you want to predict?', 0, 1000, 10, 5)
     sleep_time = st.slider('Sleep time', 0, 3, 0) 
 # Initiate the model building process
  # Load data based on checkbox selection
@@ -92,14 +84,34 @@ if df is not None and df_prediction is not None:
         st.write("Loading data ...")
         time.sleep(sleep_time)
         # Instantiating Reader scale with expected rating scale
-        reader = Reader(rating_scale = (1, 3))
+        reader = Reader(rating_scale = (1, 5))
 
-        # Define 5 quantiles for bin edges, which will split the data into 5 equal parts
-        quantiles = df['tool_usage'].quantile([0, 0.3,0.6, 1])
+       # Initialize an empty column for rate
+        df['rate'] = pd.NA
+
+        # Define quantiles
+        quantiles = [0, 0.2, 0.4, 0.6, 0.8, 1]
+
         # Define bin labels
-        bin_labels = [1,2,3]
-        # Create a new column 'usage_category_5_groups' with the binned data
-        df['rate'] = pd.cut(df['tool_usage'], bins=quantiles, labels=bin_labels, include_lowest=True)
+        bin_labels = [1, 2, 3, 4, 5]
+
+        # Function to apply quantile binning to each group
+        def quantile_binning(group):
+            # Calculate bin edges for the current group, dropping duplicates
+            bin_edges = group['tool_usage'].quantile(quantiles).round(0).unique().tolist()
+            bin_edges.sort()  # Ensure the bin edges are sorted
+            print(group['tool'].unique().tolist(), bin_edges)
+
+            # Adjust bin labels based on the number of unique bin edges - 1
+            unique_bin_labels = range(1, len(bin_edges))
+
+            # Bin the group's tool_usage column and assign it to the rate column
+            group['rate'] = pd.cut(group['tool_usage'], bins=bin_edges, labels=unique_bin_labels, include_lowest=True)
+            return group
+
+        # Apply the quantile binning function to each group
+        df = df.groupby('tool').apply(quantile_binning)
+
         # Loading the rating dataset
         data = Dataset.load_from_df(df[['user_id', 'tool', 'rate']], reader)
         # Splitting the data into train and test datasets
@@ -163,20 +175,20 @@ if df is not None and df_prediction is not None:
             # Return the precision, recall, and F1 score
             return rmse, precision, recall, f1_score
 
-        # Declaring the similarity options
-        sim_options = {'name': 'cosine',
-               'user_based': True
-               }
+       # Using the optimal similarity measure for user-user collaborative filtering
+        sim_options = {'name': 'msd',
+                    'user_based': True}
 
-        # KNN algorithm is used to find desired similar items
-        sim_user_user = KNNBasic(sim_options = sim_options, verbose = False, random_state = 1)
+        # Creating an instance of KNNBasic with optimal hyperparameter values
+        sim_user_user_optimized = KNNBasic(sim_options = sim_options, k = 50, min_k = 6, random_state = 1, verbose = False)
 
-        # Train the algorithm on the train set, and predict ratings for the test set
-        sim_user_user.fit(trainset)
+        # Training the algorithm on the train set
+        sim_user_user_optimized.fit(trainset)
+
         st.write("Evaluating performance metrics ...")
         time.sleep(sleep_time)
         # Let us compute precision@k, recall@k, and F_1 score with k = 10
-        precision_recall_at_k(sim_user_user)
+        precision_recall_at_k(sim_user_user_optimized)
         st.write("Tool Recommendation prediction ...")
         time.sleep(sleep_time)
         def n_users_not_interacted_with(n, data, tool):
@@ -184,42 +196,43 @@ if df is not None and df_prediction is not None:
             all_users = set(data['user_id'])
             return list(all_users.difference(users_interacted_with_product))[:n] # where n is the number of elements to get in the list
 
-        #select 50 users that never using quick-edit-toolbar
-        sample_users_q = n_users_not_interacted_with(user_predict, df_prediction, selected_tool)
-        # Predict ratings for each user for the specific item
-        predictions = [sim_user_user.predict(user_id, selected_tool, r_ui=5, verbose=True) for user_id in sample_users_q]
+        
+        def get_recommendations_for_users(data, user_ids, top_n, algo):
+            all_recommendations = {}
 
-        # Create a DataFrame from the predictions
-        predicted_ratings = pd.DataFrame({
-            'user_id': [prediction.uid for prediction in predictions],
-            'item': selected_tool,
-            'predicted_rating': [prediction.est for prediction in predictions],
-            'actual_k': [prediction.details.get('actual_k') for prediction in predictions],
-            'was_impossible': [prediction.details.get('was_impossible') for prediction in predictions]
-        })
+            for user_id in user_ids:
+                recommendations = []
+                user_item_interactions_matrix = data.pivot(index='user_id', columns='tool', values='rate')
+                non_interacted_tool = user_item_interactions_matrix.loc[user_id][user_item_interactions_matrix.loc[user_id].isnull()].index.tolist()
 
-        predicted_ratings = predicted_ratings[predicted_ratings['was_impossible'] == False]
-        predicted_ratings = predicted_ratings.sort_values(by='predicted_rating', ascending=False)
-        predicted_ratings = predicted_ratings.reset_index()
-        predicted_ratings = predicted_ratings.drop(columns=['index','was_impossible','actual_k'])
+                for item_id in non_interacted_tool:
+                    est = algo.predict(user_id, item_id).est
+                    recommendations.append((item_id, est))
+
+                recommendations.sort(key=lambda x: x[1], reverse=True)
+                all_recommendations[user_id] = recommendations[:top_n]
+
+            # Flatten the dictionary to a list suitable for DataFrame conversion
+            recommendation_list = []
+            for user_id, recommendations in all_recommendations.items():
+                for tool_id, rating in recommendations:
+                    recommendation_list.append({'user_id': user_id, 'tool_id': tool_id, 'rating': rating})
+
+            # Convert the list to a DataFrame
+            recommendations_df = pd.DataFrame(recommendation_list)
+
+            return recommendations_df
+        
+        # Making top 5 recommendations for userId 4 using the similarity-based recommendation system
+        unique_user_ids = df['user_id'].unique().tolist()
+        recommendations = get_recommendations_for_users(df, unique_user_ids , 3, sim_user_user_optimized)
+     
     status.update(label="Status", state="complete", expanded=False)
-
-    # Rating Metric
-    st.header('Rating Interpretation')
-    # Initialize a string to hold the message
-    message = 'Usage of each tool has been divided into 3 ratings based on the 30,60,100 quantiles:\n\n'
-    # Iterate over the quantiles to append the ranges to the message
-    for i in range(len(quantiles) - 1):
-        lower_bound = quantiles.iloc[i]
-        upper_bound = quantiles.iloc[i + 1]
-        message += f'    Rating {i + 1}: {lower_bound} to {upper_bound}\n'
-
-    # Use st.write to display the message in the Streamlit app
-    st.write(message)       
+   
 
     # Model Metric
     # Let us compute precision@k, recall@k, and F_1 score with k = 10
-    rmse, precision, recall, f1_score = precision_recall_at_k(sim_user_user)
+    rmse, precision, recall, f1_score = precision_recall_at_k(sim_user_user_optimized)
     st.header('Model Performance')
     st.write(f'RMSE: {rmse}',)
     st.write(f'Precision: all the relevant tools {precision* 100:.2f}% are recommended.')  # Display the overall precision
@@ -231,7 +244,7 @@ if df is not None and df_prediction is not None:
 
 # Use a container to span the full width
     with st.container():
-        st.dataframe(predicted_ratings, height=320)
+        st.dataframe(recommendations, height=320)
     
 
     
