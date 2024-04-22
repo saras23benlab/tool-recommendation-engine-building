@@ -35,11 +35,14 @@ with st.sidebar:
     st.header('1. Choose Use case')
 
     # Select example data
-    st.markdown('**1.1 Use Case: Targeted Tool Recommendations for Less Active, Established Free Users**')
-    example_data_1 = st.checkbox('Load example 1 data')
+    st.markdown('**1. Use Case**')
+    example_data_1 = st.checkbox('Load example 1 data:  Targeted Tool Recommendations for Less Active, Established Free Users')
+    example_data_2 = st.checkbox('Load example 2 data: Targeted Paid Tool Recommendations for High Active, Established Free Users')
 
-    st.markdown('**1.2 Use Case: Targeted Paid Tool Recommendations for High Active, Established Free Users**')
-    example_data_2 = st.checkbox('Load example 2 data')
+    st.markdown('**2. Methdology**')
+    model_1 = st.checkbox('user-user similarity based recommendation system')
+    model_2 = st.checkbox('item-item similarity based recommendation system')
+    
 
     st.header('2. Set Parameters')
     parameter_split_size = st.slider('Data split ratio (% for Testing Set)', 10, 90, 80, 5)
@@ -176,8 +179,12 @@ if df is not None and df_prediction is not None:
             return rmse, precision, recall, f1_score
 
        # Using the optimal similarity measure for user-user collaborative filtering
-        sim_options = {'name': 'msd',
-                    'user_based': True}
+        if model_1:
+            sim_options = {'name': 'msd',
+                        'user_based': True}
+        if model_2: 
+            sim_options = {'name': 'msd',
+                           'user_based': False}
 
         # Creating an instance of KNNBasic with optimal hyperparameter values
         sim_user_user_optimized = KNNBasic(sim_options = sim_options, k = 50, min_k = 6, random_state = 1, verbose = False)
